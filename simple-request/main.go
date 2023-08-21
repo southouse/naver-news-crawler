@@ -3,52 +3,24 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
 
-type card struct {
-	publisher   string
-	title       string
-	description string
-	start       string
-}
-
 // var baseURL string = "https://search.naver.com/search.naver?where=news&query=현대카드&sort=1&start=0"
 var baseURL string = "https://search.naver.com/"
-var keyword string = "hyundaicard"
+var keyword string = "현대카드"
 var requestURL string = baseURL + "search.naver?where=news&sort=1&query=" + keyword
 
 func main() {
-	var results []card
-	c := make(chan []card)
 
-	pageCount := getPageCount(getResponse(requestURL)) / 2
-
-	start := 1
-	for i := 0; i < pageCount; i++ {
-		go getPage(start, c)
-		start += 10
-	}
-
-	for i := 0; i < pageCount; i++ {
-		cards := <-c
-		results = append(results, cards...)
-	}
-
-	for _, card := range results {
-		fmt.Println(card.publisher, card.title, card.start)
-	}
+	getPage()
 
 }
 
 func getResponse(requestURL string) *http.Response {
-	time.Sleep(1000)
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
@@ -79,35 +51,21 @@ func getPageCount(res *http.Response) int {
 	return result
 }
 
-func getPage(start int, mainC chan []card) {
-	c := make(chan card)
-	var results []card
-
-	fmt.Println("Request URL: ", requestURL+"&start="+strconv.Itoa(start))
-	res := getResponse(requestURL + "&start=" + strconv.Itoa(start))
+func getPage() {
+	fmt.Println("Request URL: ", requestURL+"&start=1")
+	res := getResponse(requestURL + "&start=1")
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	checkErr(err)
 
 	searchCards := doc.Find(".news_area")
 
 	searchCards.Each(func(i int, s *goquery.Selection) {
-		go createCard(s, c, strconv.Itoa(start))
+		publisher := s.Find(".info_group > a").First().Text()
+		title := s.Find(".news_tit").Text()
+		description := s.Find(".dsc_wrap").Text()
+
+		fmt.Printf("publisher: "+publisher, "title: "+title, "description: "+description)
 	})
-
-	for i := 0; i < searchCards.Length(); i++ {
-		result := <-c
-		results = append(results, result)
-	}
-
-	mainC <- results
-}
-
-func createCard(s *goquery.Selection, c chan<- card, start string) {
-	publisher := s.Find(".info_group > a").First().Text()
-	title := s.Find(".news_tit").Text()
-	description := s.Find(".dsc_wrap").Text()
-
-	c <- card{publisher: publisher, title: title, description: description, start: start}
 }
 
 func checkErr(err error) {
@@ -119,12 +77,6 @@ func checkErr(err error) {
 
 func checkStatus(res *http.Response) {
 	if res.StatusCode != 200 {
-		b, err := io.ReadAll(res.Body)
-		if err != nil {
-			log.Fatalln(err)
-		}
-
-		fmt.Println(string(b))
 		log.Fatalln("Request failed with Status:", res.StatusCode)
 	}
 }
