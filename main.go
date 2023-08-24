@@ -7,44 +7,43 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	telegramapi "github.com/southouse/naver-news-crawler/telegram-api"
 )
 
 type card struct {
 	publisher   string
 	title       string
 	description string
-	start       string
+	url         string
+	date        time.Time
 }
 
 // var baseURL string = "https://search.naver.com/search.naver?where=news&query=현대카드&sort=1&start=0"
 var baseURL string = "https://search.naver.com/"
-var keyword string = "hyundaicard"
+var keyword string = "%EB%8D%B0%EC%9D%B4%EC%8B%9D%EC%8A%A4%20%22%EC%BD%98%EC%84%9C%ED%8A%B8%22%2B%EA%B0%9C%EC%B5%9C%20-%EC%9D%8C%EC%9B%90%20-%EC%95%A8%EB%B2%94"
 var requestURL string = baseURL + "search.naver?where=news&sort=1&query=" + keyword
 
 func main() {
-	var results []card
-	c := make(chan []card)
+	c := make(chan card)
 
 	pageCount := getPageCount(getResponse(requestURL)) / 2
 
 	start := 1
+
 	for i := 0; i < pageCount; i++ {
 		go getPage(start, c)
 		start += 10
 	}
 
-	for i := 0; i < pageCount; i++ {
-		cards := <-c
-		results = append(results, cards...)
+	for card := range c {
+		request := "[" + card.date.Format(time.RFC3339) + "]" + " " + card.publisher + " " + card.title + " " + card.url
+		telegramapi.SendMessage(request)
+		return
 	}
-
-	for _, card := range results {
-		fmt.Println(card.publisher, card.title, card.start)
-	}
-
 }
 
 func getResponse(requestURL string) *http.Response {
@@ -79,9 +78,8 @@ func getPageCount(res *http.Response) int {
 	return result
 }
 
-func getPage(start int, mainC chan []card) {
+func getPage(start int, mainC chan<- card) {
 	c := make(chan card)
-	var results []card
 
 	fmt.Println("Request URL: ", requestURL+"&start="+strconv.Itoa(start))
 	res := getResponse(requestURL + "&start=" + strconv.Itoa(start))
@@ -94,20 +92,44 @@ func getPage(start int, mainC chan []card) {
 		go createCard(s, c, strconv.Itoa(start))
 	})
 
-	for i := 0; i < searchCards.Length(); i++ {
-		result := <-c
-		results = append(results, result)
+	for i := range c {
+		if IsWithinRange(i.date, time.Now().AddDate(0, 0, -2), time.Now()) {
+			mainC <- i
+		}
 	}
 
-	mainC <- results
+	close(mainC)
 }
 
 func createCard(s *goquery.Selection, c chan<- card, start string) {
+	var cardSet card
+
 	publisher := s.Find(".info_group > a").First().Text()
 	title := s.Find(".news_tit").Text()
 	description := s.Find(".dsc_wrap").Text()
+	dateString := s.Find(".info_group > span").Text()
+	url, _ := s.Find(".news_tit").Attr("href")
+	pieces := strings.Split(dateString, ".")
 
-	c <- card{publisher: publisher, title: title, description: description, start: start}
+	year := 0
+	month := 0
+	day := 0
+	date := time.Now()
+
+	if !strings.Contains(pieces[0], "시간") {
+		year, _ = strconv.Atoi(pieces[0])
+		month, _ = strconv.Atoi(pieces[1])
+		day, _ = strconv.Atoi(pieces[2])
+		date = time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.Now().Location())
+	}
+
+	cardSet.publisher = publisher
+	cardSet.title = title
+	cardSet.description = description
+	cardSet.date = date
+	cardSet.url = url
+
+	c <- cardSet
 }
 
 func checkErr(err error) {
@@ -127,4 +149,8 @@ func checkStatus(res *http.Response) {
 		fmt.Println(string(b))
 		log.Fatalln("Request failed with Status:", res.StatusCode)
 	}
+}
+
+func IsWithinRange(checkTime, startTime, endTime time.Time) bool {
+	return checkTime.After(startTime) && checkTime.Before(endTime)
 }
