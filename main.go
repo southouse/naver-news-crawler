@@ -40,7 +40,7 @@ func main() {
 	}
 
 	for card := range c {
-		request := "[" + card.date.Format(time.RFC3339) + "]" + " " + card.publisher + " " + card.title + " " + card.url
+		request := "[" + card.date.Format(time.RFC3339) + "]%0A" + card.publisher + "%0A" + card.title + "%0A" + card.url + "%0A%0A%0A"
 		telegramapi.SendMessage(request)
 		return
 	}
@@ -54,7 +54,7 @@ func getResponse(requestURL string) *http.Response {
 
 	client := &http.Client{Transport: tr}
 	req, err := http.NewRequest("GET", requestURL, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0")
+	// req.Header.Set("User-Agent", "Mozilla/5.0")
 	checkErr(err)
 
 	res, err := client.Do(req)
@@ -81,7 +81,7 @@ func getPageCount(res *http.Response) int {
 func getPage(start int, mainC chan<- card) {
 	c := make(chan card)
 
-	fmt.Println("Request URL: ", requestURL+"&start="+strconv.Itoa(start))
+	// fmt.Println("Request URL: ", requestURL+"&start="+strconv.Itoa(start))
 	res := getResponse(requestURL + "&start=" + strconv.Itoa(start))
 	doc, err := goquery.NewDocumentFromReader(res.Body)
 	checkErr(err)
@@ -116,7 +116,7 @@ func createCard(s *goquery.Selection, c chan<- card, start string) {
 	day := 0
 	date := time.Now()
 
-	if !strings.Contains(pieces[0], "시간") {
+	if !strings.Contains(pieces[0], "시간") && !strings.Contains(pieces[0], "일") {
 		year, _ = strconv.Atoi(pieces[0])
 		month, _ = strconv.Atoi(pieces[1])
 		day, _ = strconv.Atoi(pieces[2])

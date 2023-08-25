@@ -1,0 +1,22 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: crawler
+  namespace: batch
+spec:
+  schedule: "* */4 * * *"
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    metadata:
+      name: crawler
+    spec:
+      activeDeadlineSeconds: 60
+      template:
+        metadata:
+          name: crawler
+        spec:
+          containers:
+            - name: naver-news-crawler
+              image: southouse/naver-news-crawler:0.1
+          restartPolicy: Never
